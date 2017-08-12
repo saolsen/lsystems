@@ -19,12 +19,12 @@ static int foo = 0;
 void draw()
 {
 
-	//DrawText("What a beauty! holy frack!", 200, 300, 48, DARKGREEN);
-	DrawFPS(GetScreenWidth()-80, 10);
-	//DrawRectangle(200, 200, 100, 100, DARKBLUE);
-	DrawLineEx((Vector2) { 0, 0 }, (Vector2) { 100, 100 }, 3, RED);
-	DrawText(FormatText("Hello %s %i", "steben", foo), 300, 300, 32, GREEN);
-	
+    //DrawText("What a beauty! holy frack!", 200, 300, 48, DARKGREEN);
+    DrawFPS(GetScreenWidth()-80, 10);
+    //DrawRectangle(200, 200, 100, 100, DARKBLUE);
+    DrawLineEx((Vector2) { 0, 0 }, (Vector2) { 100, 100 }, 3, RED);
+    DrawText(FormatText("Hello %s %i", "steben", foo), 300, 300, 32, GREEN);
+    
 }
 
 int main()
@@ -33,18 +33,18 @@ int main()
     int ScreenHeight = 768;
 
     InitWindow(ScreenWidth, ScreenHeight, "lsystems");
-	
-	ShowLogo();
-	TraceLog(INFO, "screen is %ix%i\n", GetScreenWidth(), GetScreenHeight());
+    
+    ShowLogo();
+    TraceLog(INFO, "screen is %ix%i\n", GetScreenWidth(), GetScreenHeight());
     
     SetTargetFPS(60);
 
     while (!WindowShouldClose())
     {
         BeginDrawing();
-		{
-			ClearBackground(RAYWHITE);
-			draw();
+        {
+            ClearBackground(RAYWHITE);
+            draw();
         }
         EndDrawing();
     }
