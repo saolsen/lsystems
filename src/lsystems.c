@@ -2,6 +2,7 @@
 // BLOG NOTES
 // traversal of a tree instead of reifying the sequence is dope and lets you do this without any memory.
 // @TODO: Rotations that you can pass in. (right now hardcoded to 90)
+// @TODO: Stack for interpreting 
 #include <stdint.h>
 #include <assert.h>
 #include <string.h>
@@ -124,17 +125,12 @@ void debug_draw()
     DrawFPS(GetScreenWidth() - 80, 10);
 }
 
-float round2(float f)
-{
-    return f;
-    //return roundf(f * 100.0) / 100.0;
-}
-
 int main()
 {
     int ScreenWidth = 1024*2;
     int ScreenHeight = 768*2;
 
+    SetConfigFlags(FLAG_WINDOW_RESIZABLE);
     InitWindow(ScreenWidth, ScreenHeight, "lsystems");
 
     ShowLogo();
@@ -142,8 +138,36 @@ int main()
 
     SetTargetFPS(60);
 
+    Camera2D camera;
+
+    camera.target = (Vector2) { 0, 0 };
+    camera.offset = (Vector2) { 0, 0 };
+    camera.rotation = 0.0f;
+    camera.zoom = 1.0f;
+
     while (!WindowShouldClose())
     {
+        // This is sorta shite, I would like zoom aware mouse drag please!
+
+        if (IsKeyDown(KEY_RIGHT)) {
+            camera.offset.x -= 2;
+        }
+        if (IsKeyDown(KEY_LEFT)) {
+            camera.offset.x += 2;
+        }
+        if (IsKeyDown(KEY_UP)) {
+            camera.offset.y += 2;
+        }
+        if (IsKeyDown(KEY_DOWN)) {
+            camera.offset.y -= 2;
+        }
+
+        // Camera zoom controls
+        camera.zoom += ((float)GetMouseWheelMove()*0.05f);
+
+        if (camera.zoom > 3.0f) camera.zoom = 3.0f;
+        else if (camera.zoom < 0.1f) camera.zoom = 0.1f;
+
         //test();
         BeginDrawing();
         {
@@ -155,8 +179,12 @@ int main()
                 RULE('Y', "-FX-Y"),
                 {0,0,0}
             };
+            Begin2dMode(camera);
 
             lsystem_eval(input, rules, 13);
+
+            End2dMode();
+
             debug_draw();
         }
         EndDrawing();
