@@ -1,8 +1,6 @@
 
 // BLOG NOTES
 // traversal of a tree instead of reifying the sequence is dope and lets you do this without any memory.
-// @TODO: Rotations that you can pass in. (right now hardcoded to 90)
-// @TODO: Stack for interpreting 
 #include <stdint.h>
 #include <assert.h>
 #include <string.h>
@@ -25,7 +23,12 @@ typedef struct {
     size_t production_pos;
 } Frame;
 
-void interpret(char c, Vector2 *pos, Vector2 *dir)
+#define MIN(x,y) ((x < y) ? x : y)
+#define MAX(x,y) ((x > y) ? x : y)
+
+// @TODO: Rotations that you can pass in. (right now hardcoded to 90)
+// @TODO: Stack for interpreting 
+void interpret(char c, Vector2 *pos, Vector2 *dir, Vector2 *min, Vector2 *max)
 {
     // @BUG: Rotations don't work :( 
     switch (c) {
@@ -33,14 +36,23 @@ void interpret(char c, Vector2 *pos, Vector2 *dir)
         // draw a line
         Vector2 np = Vector2Add(*pos, *dir);
         Vector2 screen_pos = *pos;
-        screen_pos.y = GetScreenHeight() - screen_pos.y;
+        screen_pos.y = /*GetScreenHeight()*/ - screen_pos.y;
         Vector2 screen_np = np;
-        screen_np.y = GetScreenHeight() - screen_np.y;
+        screen_np.y = /*GetScreenHeight()*/ - screen_np.y;
         DrawLineEx(screen_pos, screen_np, 3, RED);
         *pos = np;
+
+        min->x = MIN(min->x, pos->x);
+        min->y = MIN(min->y, pos->y);
+        max->x = MAX(max->x, pos->x);
+        max->y = MAX(max->y, pos->y);
     } break;
     case('f'): {
         *pos = Vector2Add(*pos, *dir);
+        min->x = MIN(min->x, pos->x);
+        min->y = MIN(min->y, pos->y);
+        max->x = MAX(max->x, pos->x);
+        max->y = MAX(max->y, pos->y);
     } break;
     case('-'): {
         float sn = 1;
@@ -64,7 +76,7 @@ void interpret(char c, Vector2 *pos, Vector2 *dir)
     }
 }
 
-void lsystem_eval(char* input, Rule *rules, int num_applications)
+void lsystem_eval(char* input, Rule *rules, int num_applications, Vector2 *min, Vector2 *max)
 {
     assert(num_applications <= 26);
     Frame stack[26]; // Stack must be as large as the max lsystem applications.
@@ -78,10 +90,12 @@ void lsystem_eval(char* input, Rule *rules, int num_applications)
 
     Vector2 pos = { .x = 0,.y = 0 };
     Vector2 dir = { .x = 0,.y = 10 };
+    *min = pos;
+    *max = pos;
     float angle = 90;
 
-    pos.x = (float)GetScreenWidth() / 2;
-    pos.y = (float)GetScreenHeight() / 2;
+    //pos.x = (float)GetScreenWidth() / 2;
+    //pos.y = (float)GetScreenHeight() / 2;
 
     for (;;) {
         char c = current_frame.production[current_frame.production_pos++];
@@ -108,7 +122,7 @@ void lsystem_eval(char* input, Rule *rules, int num_applications)
             current_frame.production_pos = 0;
 
         } else {
-            interpret(c, &pos, &dir);
+            interpret(c, &pos, &dir, min, max);
             while (current_frame.production_pos == current_frame.production_len) {
                 if (sp == 0) {
                     return;
@@ -120,9 +134,24 @@ void lsystem_eval(char* input, Rule *rules, int num_applications)
     }
 }
 
-void debug_draw()
+void debug_draw(Vector2 min, Vector2 center, Vector2 max)
 {
-    DrawFPS(GetScreenWidth() - 80, 10);
+    int y = 10;
+    //int circle_x = GetScreenWidth() - 175;
+    int text_x = GetScreenWidth() - 250;
+    int circle_x = text_x - 50;
+    DrawFPS(text_x, y);
+   /* y += 30;
+    DrawCircle(circle_x, y+10, 10, GREEN);
+    DrawText(FormatText("(%.2f,%.2f)", min.x, min.y), text_x, y, 30, BLACK);
+    y += 30;
+    DrawCircle(circle_x, y + 10, 10, ORANGE);
+    DrawText(FormatText("(%.2f,%.2f)", center.x, center.y), text_x, y, 30, BLACK);
+    y += 30;
+    DrawCircle(circle_x, y + 10, 10, BLUE);
+    DrawText(FormatText("(%.2f,%.2f)", max.x, max.y), text_x, y, 30, BLACK);
+
+    DrawCircle(GetScreenWidth() / 2, GetScreenHeight() / 2, 5, PINK);*/
 }
 
 int main()
@@ -145,28 +174,41 @@ int main()
     camera.rotation = 0.0f;
     camera.zoom = 1.0f;
 
+    Vector2 min = (Vector2) { 0, 0 };
+    Vector2 max = (Vector2) { 1, 1 };
+
     while (!WindowShouldClose())
     {
-        // This is sorta shite, I would like zoom aware mouse drag please!
+        // @TODO: Drag the canvas with the mouse.
+        // @TODO: Make the zoom relative to the center of the screen.
 
-        if (IsKeyDown(KEY_RIGHT)) {
-            camera.offset.x -= 2;
-        }
-        if (IsKeyDown(KEY_LEFT)) {
-            camera.offset.x += 2;
-        }
-        if (IsKeyDown(KEY_UP)) {
-            camera.offset.y += 2;
-        }
-        if (IsKeyDown(KEY_DOWN)) {
-            camera.offset.y -= 2;
-        }
+        //if (IsKeyDown(KEY_RIGHT)) {
+        //    camera.offset.x -= 2;
+        //}
+        //if (IsKeyDown(KEY_LEFT)) {
+        //    camera.offset.x += 2;
+        //}
+        //if (IsKeyDown(KEY_UP)) {
+        //    camera.offset.y += 2;
+        //}
+        //if (IsKeyDown(KEY_DOWN)) {
+        //    camera.offset.y -= 2;
+        //}
 
         // Camera zoom controls
         camera.zoom += ((float)GetMouseWheelMove()*0.05f);
 
         if (camera.zoom > 3.0f) camera.zoom = 3.0f;
         else if (camera.zoom < 0.1f) camera.zoom = 0.1f;
+
+        Vector2 center = Vector2Subtract(max, min);
+        Vector2Divide(&center, 2);
+        center = Vector2Add(center, min);
+
+        //camera.target = center;
+        camera.target = (Vector2) { center.x, -center.y };
+        //camera.offset = center;
+        camera.offset = (Vector2) {GetScreenWidth()/2 - center.x,GetScreenHeight()/2 + center.y};
 
         //test();
         BeginDrawing();
@@ -181,11 +223,16 @@ int main()
             };
             Begin2dMode(camera);
 
-            lsystem_eval(input, rules, 13);
+            lsystem_eval(input, rules, 13, &min, &max);
+
+            //DrawCircle(min.x, -min.y, 10, GREEN);
+            //DrawCircle(center.x, -center.y, 10, ORANGE);
+            //DrawCircle(max.x, -max.y, 10, BLUE);
+            //DrawCircle(0, 0, 10, BLACK);
 
             End2dMode();
 
-            debug_draw();
+            debug_draw(min, center, max);
         }
         EndDrawing();
     }
