@@ -1,9 +1,7 @@
-
-// BLOG NOTES
-// traversal of a tree instead of reifying the sequence is dope and lets you do this without any memory.
 #include <stdint.h>
 #include <assert.h>
 #include <string.h>
+#include <math.h>
 
 #include "raylib.h"
 #include "raymath.h"
@@ -16,91 +14,118 @@ typedef struct {
 
 #define RULE(c, rep) (Rule){.val=c, .replacement = rep, .replacement_len = strlen(rep)}
 
-typedef struct {
-    int level;
-    char* production;
-    size_t production_len;
-    size_t production_pos;
-} Frame;
-
 #define MIN(x,y) ((x < y) ? x : y)
 #define MAX(x,y) ((x > y) ? x : y)
+#define PI 3.1415926535
 
-// @TODO: Rotations that you can pass in. (right now hardcoded to 90)
-// @TODO: Stack for interpreting 
-void interpret(char c, Vector2 *pos, Vector2 *dir, Vector2 *min, Vector2 *max)
+typedef struct {
+    Vector2 pos;
+    Vector2 dir;
+} TurtleFrame;
+
+typedef struct {
+    TurtleFrame frame;
+    TurtleFrame stack[32];
+    int sp;
+    Vector2 min;
+    Vector2 max;
+} TurtleState;
+
+// @TODO: Color codes.
+void turtle_interpret(TurtleState *turtle, float angle, char c)
 {
-    // @BUG: Rotations don't work :( 
-    switch (c) {
-    case('F'): {
-        // draw a line
-        Vector2 np = Vector2Add(*pos, *dir);
-        Vector2 screen_pos = *pos;
-        screen_pos.y = /*GetScreenHeight()*/ - screen_pos.y;
-        Vector2 screen_np = np;
-        screen_np.y = /*GetScreenHeight()*/ - screen_np.y;
-        DrawLineEx(screen_pos, screen_np, 3, RED);
-        *pos = np;
+    if (turtle->frame.dir.x == 0 && turtle->frame.dir.y == 0) {
+        turtle->frame.dir.y = 10;
+    }
 
-        min->x = MIN(min->x, pos->x);
-        min->y = MIN(min->y, pos->y);
-        max->x = MAX(max->x, pos->x);
-        max->y = MAX(max->y, pos->y);
+    switch (c) {
+    case('['): {
+        // push turtle state
+        assert(turtle->sp < 32);
+        turtle->stack[turtle->sp++] = turtle->frame;
+    } break;
+    case(']'): {
+        // pop turtle state
+        assert(turtle->sp > 0);
+        turtle->frame = turtle->stack[--turtle->sp];
+    } break;
+    case('F'): {
+        // draw line
+        Vector2 np = Vector2Add(turtle->frame.pos, turtle->frame.dir);
+        Vector2 screen_pos = turtle->frame.pos;
+        screen_pos.y = -screen_pos.y;
+        Vector2 screen_np = np;
+        screen_np.y = -screen_np.y;
+        DrawLineEx(screen_pos, screen_np, 3, BLACK);
+        turtle->frame.pos = np;
+
+        turtle->min.x = MIN(turtle->min.x, turtle->frame.pos.x);
+        turtle->min.y = MIN(turtle->min.y, turtle->frame.pos.y);
+        turtle->max.x = MAX(turtle->max.x, turtle->frame.pos.x);
+        turtle->max.y = MAX(turtle->max.y, turtle->frame.pos.y);
     } break;
     case('f'): {
-        *pos = Vector2Add(*pos, *dir);
-        min->x = MIN(min->x, pos->x);
-        min->y = MIN(min->y, pos->y);
-        max->x = MAX(max->x, pos->x);
-        max->y = MAX(max->y, pos->y);
+        // skip line
+        turtle->frame.pos = Vector2Add(turtle->frame.pos, turtle->frame.dir);
+
+        turtle->min.x = MIN(turtle->min.x, turtle->frame.pos.x);
+        turtle->min.y = MIN(turtle->min.y, turtle->frame.pos.y);
+        turtle->max.x = MAX(turtle->max.x, turtle->frame.pos.x);
+        turtle->max.y = MAX(turtle->max.y, turtle->frame.pos.y);
     } break;
     case('-'): {
-        float sn = 1;
-        float cs = 0;
-        //float sn = 0;
-        //float cs = roundf(cosf(theta) * 100) / 100;
-        //float sn = roundf(sinf(theta) * 100) / 100;
-        Vector2 nd = { .x = (dir->x * cs) - (dir->y * sn),
-            .y = (dir->x * sn) + (dir->y * cs) };
-        *dir = nd;
+        // rotate clockwise
+        float theta = angle * PI / 180;
+        float cs = cos(theta);
+        float sn = sin(theta);
+       
+        Vector2 nd = { .x = (turtle->frame.dir.x * cs) - (turtle->frame.dir.y * sn),
+                       .y = (turtle->frame.dir.x * sn) + (turtle->frame.dir.y * cs) };
+        turtle->frame.dir = nd;
     } break;
     case('+'): {
-        float sn = -1;
-        float cs = 0;
-        //float cs = cosf(theta);
-        //float sn = sinf(theta);
-        Vector2 nd = { .x = (dir->x * cs) - (dir->y * sn),
-            .y = (dir->x * sn) + (dir->y * cs) };
-        *dir = nd;
+        // rotate counterclockwise
+        float theta = -angle * PI / 180;
+        float cs = cos(theta);
+        float sn = sin(theta);
+
+        Vector2 nd = { .x = (turtle->frame.dir.x * cs) - (turtle->frame.dir.y * sn),
+                       .y = (turtle->frame.dir.x * sn) + (turtle->frame.dir.y * cs) };
+        turtle->frame.dir = nd;
     } break;
     }
 }
 
-void lsystem_eval(char* input, Rule *rules, int num_applications, Vector2 *min, Vector2 *max)
+#define MAX_DEPTH 26
+
+void lsystem_eval(char* input, Rule *rules, float angle, int num_applications, Vector2 *min, Vector2 *max)
 {
     assert(num_applications <= 26);
-    Frame stack[26]; // Stack must be as large as the max lsystem applications.
+
+    TurtleState turtle = {0};
+
+    typedef struct {
+        int level;
+        char* production;
+        size_t production_len;
+        size_t production_pos;
+    } EvalFrame;
+
+    EvalFrame stack[MAX_DEPTH];
     int sp = 0;
 
-    Frame current_frame;
+    assert(num_applications <= MAX_DEPTH);
+
+    EvalFrame current_frame;
     current_frame.level = 0;
     current_frame.production = input;
     current_frame.production_len = strlen(input);
     current_frame.production_pos = 0;
 
-    Vector2 pos = { .x = 0,.y = 0 };
-    Vector2 dir = { .x = 0,.y = 10 };
-    *min = pos;
-    *max = pos;
-    float angle = 90;
-
-    //pos.x = (float)GetScreenWidth() / 2;
-    //pos.y = (float)GetScreenHeight() / 2;
-
     for (;;) {
         char c = current_frame.production[current_frame.production_pos++];
 
-        // Check for a rule unless we're in the last level.
+        // check for a rule unless we're in the last level.
         Rule *rule = NULL;
         if (current_frame.level != num_applications) {
             for (Rule *r = rules;
@@ -114,7 +139,7 @@ void lsystem_eval(char* input, Rule *rules, int num_applications, Vector2 *min, 
         }
 
         if (rule) {
-            // drop down into rule.
+            // push into rule
             stack[sp++] = current_frame;
             current_frame.level = current_frame.level++;
             current_frame.production = rule->replacement;
@@ -122,11 +147,15 @@ void lsystem_eval(char* input, Rule *rules, int num_applications, Vector2 *min, 
             current_frame.production_pos = 0;
 
         } else {
-            interpret(c, &pos, &dir, min, max);
+            turtle_interpret(&turtle, angle, c);
             while (current_frame.production_pos == current_frame.production_len) {
                 if (sp == 0) {
+                    // done with input
+                    *min = turtle.min;
+                    *max = turtle.max;
                     return;
                 } else {
+                    // pop out of rule
                     current_frame = stack[--sp];
                 }
             }
@@ -137,25 +166,90 @@ void lsystem_eval(char* input, Rule *rules, int num_applications, Vector2 *min, 
 void debug_draw(Vector2 min, Vector2 center, Vector2 max)
 {
     int y = 10;
-    //int circle_x = GetScreenWidth() - 175;
     int text_x = GetScreenWidth() - 250;
-    int circle_x = text_x - 50;
     DrawFPS(text_x, y);
-   /* y += 30;
-    DrawCircle(circle_x, y+10, 10, GREEN);
-    DrawText(FormatText("(%.2f,%.2f)", min.x, min.y), text_x, y, 30, BLACK);
-    y += 30;
-    DrawCircle(circle_x, y + 10, 10, ORANGE);
-    DrawText(FormatText("(%.2f,%.2f)", center.x, center.y), text_x, y, 30, BLACK);
-    y += 30;
-    DrawCircle(circle_x, y + 10, 10, BLUE);
-    DrawText(FormatText("(%.2f,%.2f)", max.x, max.y), text_x, y, 30, BLACK);
-
-    DrawCircle(GetScreenWidth() / 2, GetScreenHeight() / 2, 5, PINK);*/
 }
+
+// Examples
+typedef struct {
+    char *input;
+    Rule rules[10];
+    float angle;
+    int steps;
+} Example;
 
 int main()
 {
+    Example tree_1 = {
+        .input = "FX",
+        .rules = {
+            RULE('X', "F - [[X] + X] + F[+FX] - X"),
+            RULE('F', "FF"),
+            {0,0,0}},
+        .angle = 25,
+        .steps = 6
+    };
+
+    Example tree_2 = {
+        .input = "FX",
+        .rules = {
+        RULE('F', "FF-[-F+F]+[+F-F]"),
+        RULE('X', "FF+[+F]+[-F]"),
+        { 0,0,0 } },
+        .angle = 25,
+        .steps = 4
+    };
+
+    Example dragon_curve = {
+        .input = "FX",
+        .rules = {
+        RULE('X', "X+YF+"),
+        RULE('Y', "-FX-Y"),
+        { 0,0,0 } },
+        .angle = 90,
+        .steps = 13
+    };
+
+    Example diamond_thingy = {
+        .input = "L--F--L--F",
+        .rules = {
+        RULE('L', "+R-F-R+"),
+        RULE('R', "-L+F+L-"),
+        { 0,0,0 } },
+        .angle = 45,
+        .steps = 10
+    };
+
+    Example triangle_thingy = {
+        .input = "-F",
+        .rules = {
+        RULE('F', "F+F-F-F+F"),
+        { 0,0,0 } },
+        .angle = 90,
+        .steps = 5
+    };
+
+    Example one_with_skips = {
+        .input = "F+F+F+F",
+        .rules = {
+        RULE('F', "F+f-FF+F+FF+Ff+FF-f+FF-F-FF-Ff-FFF"),
+        RULE('f', "ffffff"),
+        { 0,0,0 } },
+        .angle = 90,
+        .steps = 2
+    };
+
+    Example star = {
+        .input = "F-F-F-F-F",
+        .rules = {
+        RULE('F', "F-F++F+F-F-F"),
+        { 0,0,0 } },
+        .angle = 72,
+        .steps = 4
+    };
+   
+    Example example = one_with_skips;
+
     int ScreenWidth = 1024*2;
     int ScreenHeight = 768*2;
 
@@ -179,22 +273,6 @@ int main()
 
     while (!WindowShouldClose())
     {
-        // @TODO: Drag the canvas with the mouse.
-        // @TODO: Make the zoom relative to the center of the screen.
-
-        //if (IsKeyDown(KEY_RIGHT)) {
-        //    camera.offset.x -= 2;
-        //}
-        //if (IsKeyDown(KEY_LEFT)) {
-        //    camera.offset.x += 2;
-        //}
-        //if (IsKeyDown(KEY_UP)) {
-        //    camera.offset.y += 2;
-        //}
-        //if (IsKeyDown(KEY_DOWN)) {
-        //    camera.offset.y -= 2;
-        //}
-
         // Camera zoom controls
         camera.zoom += ((float)GetMouseWheelMove()*0.05f);
 
@@ -205,30 +283,16 @@ int main()
         Vector2Divide(&center, 2);
         center = Vector2Add(center, min);
 
-        //camera.target = center;
         camera.target = (Vector2) { center.x, -center.y };
-        //camera.offset = center;
         camera.offset = (Vector2) {GetScreenWidth()/2 - center.x,GetScreenHeight()/2 + center.y};
 
-        //test();
         BeginDrawing();
         {
             ClearBackground(RAYWHITE);
 
-            char * input = "FX";
-            Rule rules[] = {
-                RULE('X', "X+YF+"),
-                RULE('Y', "-FX-Y"),
-                {0,0,0}
-            };
             Begin2dMode(camera);
 
-            lsystem_eval(input, rules, 13, &min, &max);
-
-            //DrawCircle(min.x, -min.y, 10, GREEN);
-            //DrawCircle(center.x, -center.y, 10, ORANGE);
-            //DrawCircle(max.x, -max.y, 10, BLUE);
-            //DrawCircle(0, 0, 10, BLACK);
+            lsystem_eval(example.input, example.rules, example.angle, example.steps, &min, &max);
 
             End2dMode();
 
